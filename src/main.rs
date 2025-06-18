@@ -29,7 +29,7 @@ fn main() {
         // Writes inputs to a file to help debugging
         write_to_output_file(&input_buffer);
 
-        let mut input_tokens = input_buffer.trim().split_whitespace();
+        let mut input_tokens = input_buffer.split_whitespace();
         
         let first_token = match input_tokens.next() {
             Some(token) => token,
@@ -95,7 +95,7 @@ fn return_best_move(game_state: &mut GameState) {
     let min_search_time = Duration::from_millis(min_search_ms);
 
     let best_move = find_best_move_with_time(&game_state.chess, min_search_time, &mut game_state.previously_seen_hashes);
-    println!("bestmove {}", best_move.to_uci(shakmaty::CastlingMode::Standard).to_string());
+    println!("bestmove {}", best_move.to_uci(shakmaty::CastlingMode::Standard));
 }
 
 fn update_position(position: Vec<String>, game_state: &mut GameState) {
@@ -113,7 +113,7 @@ fn update_position(position: Vec<String>, game_state: &mut GameState) {
     let starting_pos_hash: Zobrist64 = chess.zobrist_hash(shakmaty::EnPassantMode::Legal);
     let mut hashes_seen = vec![starting_pos_hash.0];
 
-    if let Some(_) = fen_and_moves.next() {
+    if fen_and_moves.next().is_some() {
         for m in fen_and_moves {
             let selected_move = UciMove::from_ascii(m.as_bytes()).expect("Move should be valid");
             let legal_move = selected_move.to_move(&chess).expect("Move should be legal");

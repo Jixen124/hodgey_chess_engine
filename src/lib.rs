@@ -65,7 +65,7 @@ pub fn find_best_move_with_depth(chess: &Chess, max_depth: u16, previously_seen_
 
         for (index, m) in moves.clone().iter().enumerate() {
             let mut new_chess = chess.clone();
-            new_chess.play_unchecked(&m);
+            new_chess.play_unchecked(m);
 
             let score = -nega_max(&new_chess, depth, NEG_INFINITY, -best_score,
                                         &mut transposition_table, previously_seen_hashes);
@@ -87,7 +87,7 @@ pub fn find_best_move_with_depth(chess: &Chess, max_depth: u16, previously_seen_
         depth += 2;
     }
 
-    return moves[0].clone();
+    moves[0].clone()
 }
 
 /// Finds the best move searching for a given minimum search time.
@@ -116,7 +116,7 @@ pub fn find_best_move_with_time(chess: &Chess, min_search_time: Duration, previo
             }
 
             let mut new_chess = chess.clone();
-            new_chess.play_unchecked(&m);
+            new_chess.play_unchecked(m);
 
             let score = -nega_max(&new_chess, depth, NEG_INFINITY, -best_score,
                                         &mut transposition_table, previously_seen_hashes);
@@ -138,7 +138,7 @@ pub fn find_best_move_with_time(chess: &Chess, min_search_time: Duration, previo
         depth += 2;
     }
 
-    return moves[0].clone();
+    moves[0].clone()
 }
 
 fn nega_max(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
@@ -161,7 +161,7 @@ fn nega_max(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
     }
 
     if depth == 0 {
-        return quiescence_search(&chess, alpha, beta);
+        return quiescence_search(chess, alpha, beta);
     }
 
     let original_alpha = alpha;
@@ -189,8 +189,7 @@ fn nega_max(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
     let mut best_move_index = 0;
 
     let mut moves = chess.legal_moves();
-    moves.sort_unstable_by_key(|m| move_score(m));
-
+    moves.sort_unstable_by_key(move_score);
 
     if transposition_table[table_index].hash == hash && (transposition_table[table_index].best_move_index as usize) < moves.len() {
         //Search best move first if there is an entry in the transposition table
@@ -258,7 +257,7 @@ fn quiescence_search(chess: &Chess, mut alpha: i32, beta: i32) -> i32 {
     }
     
     let mut capture_moves = chess.capture_moves();
-    capture_moves.sort_unstable_by_key(|m| capture_score(m));
+    capture_moves.sort_unstable_by_key(capture_score);
 
     for m in &capture_moves {
         let mut new_chess = chess.clone();
@@ -274,7 +273,7 @@ fn quiescence_search(chess: &Chess, mut alpha: i32, beta: i32) -> i32 {
         }
     }
     
-    return alpha;
+    alpha
 }
 
 #[cfg(test)]

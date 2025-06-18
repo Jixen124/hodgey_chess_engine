@@ -74,7 +74,7 @@ pub const fn move_score(m: &Move) -> i32 {
 
 //Gives captures a score for sorting, lower scores are better
 #[inline]
-pub fn capture_score(m: &Move) -> i32 {
+pub const fn capture_score(m: &Move) -> i32 {
     let role = m.capture().unwrap();
     return match m.role() {
         Role::Pawn => 1,
