@@ -8,38 +8,38 @@ pub fn evaluate_board(board: &Board) -> i32 {
     let mut black_material_score = 0;
 
     for square in board.white().intersect(board.pawns()) {
-        white_material_score += piece_square_tables::PAWN[square as usize];
+        white_material_score += piece_square_tables::PAWN[square as usize ^ 56];
     }
     for square in board.white().intersect(board.bishops()) {
-        white_material_score += piece_square_tables::BISHOP[square as usize];
+        white_material_score += piece_square_tables::BISHOP[square as usize ^ 56];
     }
     for square in board.white().intersect(board.knights()) {
-        white_material_score += piece_square_tables::KNIGHT[square as usize];
+        white_material_score += piece_square_tables::KNIGHT[square as usize ^ 56];
     }
     for square in board.white().intersect(board.rooks()) {
-        white_material_score += piece_square_tables::ROOK[square as usize];
+        white_material_score += piece_square_tables::ROOK[square as usize ^ 56];
     }
     for square in board.white().intersect(board.queens()) {
-        white_material_score += piece_square_tables::QUEEN[square as usize];
+        white_material_score += piece_square_tables::QUEEN[square as usize ^ 56];
     }
-    white_material_score += piece_square_tables::KING[board.king_of(Color::White).unwrap() as usize];
+    white_material_score += piece_square_tables::KING[board.king_of(Color::White).unwrap() as usize ^ 56];
 
     for square in board.black().intersect(board.pawns()) {
-        black_material_score += piece_square_tables::PAWN[square as usize ^ 56];
+        black_material_score += piece_square_tables::PAWN[square as usize];
     }
     for square in board.black().intersect(board.bishops()) {
-        black_material_score += piece_square_tables::BISHOP[square as usize ^ 56];
+        black_material_score += piece_square_tables::BISHOP[square as usize];
     }
     for square in board.black().intersect(board.knights()) {
-        black_material_score += piece_square_tables::KNIGHT[square as usize ^ 56];
+        black_material_score += piece_square_tables::KNIGHT[square as usize];
     }
     for square in board.black().intersect(board.rooks()) {
-        black_material_score += piece_square_tables::ROOK[square as usize ^ 56];
+        black_material_score += piece_square_tables::ROOK[square as usize];
     }
     for square in board.black().intersect(board.queens()) {
-        black_material_score += piece_square_tables::QUEEN[square as usize ^ 56];
+        black_material_score += piece_square_tables::QUEEN[square as usize];
     }
-    black_material_score += piece_square_tables::KING[board.king_of(Color::Black).unwrap() as usize ^ 56];
+    black_material_score += piece_square_tables::KING[board.king_of(Color::Black).unwrap() as usize];
 
     let material_difference = white_material_score - black_material_score;
     let total_material = white_material_score + black_material_score;

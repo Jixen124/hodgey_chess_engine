@@ -55,7 +55,7 @@ pub fn find_best_move_with_depth(chess: &Chess, max_depth: u16, previously_seen_
     let mut moves = chess.legal_moves();
     
     if moves.len() == 1 {
-        return moves[0].clone();
+        return moves[0];
     }
 
     let mut depth = 2;
@@ -65,7 +65,7 @@ pub fn find_best_move_with_depth(chess: &Chess, max_depth: u16, previously_seen_
 
         for (index, m) in moves.clone().iter().enumerate() {
             let mut new_chess = chess.clone();
-            new_chess.play_unchecked(m);
+            new_chess.play_unchecked(*m);
 
             let score = -nega_max(&new_chess, depth, NEG_INFINITY, -best_score,
                                         &mut transposition_table, previously_seen_hashes);
@@ -87,7 +87,7 @@ pub fn find_best_move_with_depth(chess: &Chess, max_depth: u16, previously_seen_
         depth += 2;
     }
 
-    moves[0].clone()
+    moves[0]
 }
 
 /// Finds the best move searching for a given minimum search time.
@@ -102,7 +102,7 @@ pub fn find_best_move_with_time(chess: &Chess, min_search_time: Duration, previo
     let mut moves = chess.legal_moves();
     
     if moves.len() == 1 {
-        return moves[0].clone();
+        return moves[0]
     }
 
     let mut depth = 2;
@@ -116,7 +116,7 @@ pub fn find_best_move_with_time(chess: &Chess, min_search_time: Duration, previo
             }
 
             let mut new_chess = chess.clone();
-            new_chess.play_unchecked(m);
+            new_chess.play_unchecked(*m);
 
             let score = -nega_max(&new_chess, depth, NEG_INFINITY, -best_score,
                                         &mut transposition_table, previously_seen_hashes);
@@ -138,7 +138,7 @@ pub fn find_best_move_with_time(chess: &Chess, min_search_time: Duration, previo
         depth += 2;
     }
 
-    moves[0].clone()
+    moves[0]
 }
 
 fn nega_max(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
@@ -195,7 +195,7 @@ fn nega_max(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
         //Search best move first if there is an entry in the transposition table
         let mut new_chess = chess.clone();
         best_move_index = transposition_table[table_index].best_move_index as usize;
-        new_chess.play_unchecked(&moves[best_move_index]);
+        new_chess.play_unchecked(moves[best_move_index]);
         let score = -nega_max(&new_chess, depth - 1, -beta, -alpha,
                                     transposition_table, previously_seen_hashes);
         value = value.max(score);
@@ -209,7 +209,7 @@ fn nega_max(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
             }
 
             let mut new_chess = chess.clone();
-            new_chess.play_unchecked(m);
+            new_chess.play_unchecked(*m);
             let score = -nega_max(&new_chess, depth - 1, -beta, -alpha,
                                         transposition_table, previously_seen_hashes);
             if score > value {
@@ -247,33 +247,38 @@ fn nega_max(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
 
 fn quiescence_search(chess: &Chess, mut alpha: i32, beta: i32) -> i32 {
     let stand_pat = evaluate_board(chess.board()) * if chess.turn().is_white() {1} else {-1};
-    
+
     if stand_pat >= beta {
-        return beta;
+        return stand_pat;
     }
 
-    if alpha < stand_pat {
+    if stand_pat > alpha { //Should be alpha
         alpha = stand_pat;
     }
     
+    let mut best_score= stand_pat;
     let mut capture_moves = chess.capture_moves();
     capture_moves.sort_unstable_by_key(capture_score);
 
     for m in &capture_moves {
         let mut new_chess = chess.clone();
-        new_chess.play_unchecked(m);
+        new_chess.play_unchecked(*m);
         let score = -quiescence_search(&new_chess, -beta, -alpha);
 
         if score >= beta {
-            return beta;
+            return score;
         }
 
+        if score > best_score {
+            best_score = score;
+        }
+        
         if score > alpha {
             alpha = score;
         }
     }
     
-    alpha
+    best_score
 }
 
 #[cfg(test)]
@@ -286,7 +291,7 @@ mod tests {
     //This is just to test performace, it asserts nothing
     fn test_fens_time() {
         for fen in test_fens::WIN_AT_CHESS {
-            let setup = Fen::from_ascii(fen.as_bytes()).expect("Fen should be valid").0;
+            let setup = Fen::from_ascii(fen.as_bytes()).expect("Fen should be valid").into_setup();
             let chess = Chess::from_setup(setup, CastlingMode::Standard).expect("position should be valid");
             find_best_move_with_depth(&chess, 2, &mut Vec::new());
         }
@@ -295,15 +300,15 @@ mod tests {
     #[test]
     //This is just to test performace, it asserts nothing
     fn test_position_time() {
-        let setup = Fen::from_ascii("2rq1bk1/1b4pp/pn3n2/1p1Ppp2/1PP1P3/7P/3N1PP1/R2QRBK1 w - - 0 23".as_bytes()).expect("Fen should be valid").0;
+        let setup = Fen::from_ascii("2rq1bk1/1b4pp/pn3n2/1p1Ppp2/1PP1P3/7P/3N1PP1/R2QRBK1 w - - 0 23".as_bytes()).expect("Fen should be valid").into_setup();
         let chess = Chess::from_setup(setup, CastlingMode::Standard).expect("position should be valid");
-        find_best_move_with_depth(&chess, 8, &mut Vec::new());
+        find_best_move_with_depth(&chess, 10, &mut Vec::new());
     }
 
     #[test]
     //Checks the the program successfully solves the lasker position
     fn lasker_position() {
-        let setup = Fen::from_ascii("8/k7/3p4/p2P1p2/P2P1P2/8/8/K7 w - -".as_bytes()).expect("Fen should be valid").0;
+        let setup = Fen::from_ascii("8/k7/3p4/p2P1p2/P2P1P2/8/8/K7 w - -".as_bytes()).expect("Fen should be valid").into_setup();
         let chess = Chess::from_setup(setup, CastlingMode::Standard).expect("position should be valid");
         assert!(find_best_move_with_depth(&chess, 20, &mut Vec::new()).to_string() == "Ka1-b1");
     }
@@ -312,7 +317,7 @@ mod tests {
     //Makes sure both my methods agree on best move from a test position
     //This might stop working if my searches become faster. It is kinda luck and hardware based.
     fn time_and_depth_agree() {
-        let setup = Fen::from_ascii("2rq1bk1/1b4pp/pn3n2/1p1Ppp2/1PP1P3/7P/3N1PP1/R2QRBK1 w - - 0 23".as_bytes()).expect("Fen should be valid").0;
+        let setup = Fen::from_ascii("2rq1bk1/1b4pp/pn3n2/1p1Ppp2/1PP1P3/7P/3N1PP1/R2QRBK1 w - - 0 23".as_bytes()).expect("Fen should be valid").into_setup();
         let chess = Chess::from_setup(setup, CastlingMode::Standard).expect("position should be valid");
         let m1 = find_best_move_with_depth(&chess, 8, &mut Vec::new());
         let m2 = find_best_move_with_time(&chess, Duration::from_millis(500), &mut Vec::new());

@@ -50,7 +50,7 @@ fn main() {
             },
             "go" => {
                 while let Some(value_type) = input_tokens.next() {
-                    let value: u64 = input_tokens.next().unwrap().parse().unwrap();
+                    let value: u64 = input_tokens.next().unwrap().parse().unwrap(); //WHAT THE HELL IS THIS?
                     
                     game_state.exact_move_time = false;
 
@@ -106,7 +106,7 @@ fn update_position(position: Vec<String>, game_state: &mut GameState) {
         Chess::new()
     }
     else {
-        let setup = Fen::from_ascii(fen.as_bytes()).expect("Fen should be valid").0;
+        let setup = Fen::from_ascii(fen.as_bytes()).expect("Fen should be valid").into_setup();
         Chess::from_setup(setup, shakmaty::CastlingMode::Standard).expect("position should be valid")
     };
 
@@ -120,7 +120,7 @@ fn update_position(position: Vec<String>, game_state: &mut GameState) {
             if legal_move.is_zeroing() {
                 hashes_seen.clear();
             }
-            chess.play_unchecked(&legal_move);
+            chess.play_unchecked(legal_move);
             let hash: Zobrist64 = chess.zobrist_hash(shakmaty::EnPassantMode::Legal);
             hashes_seen.push(hash.0);
         }
