@@ -90,8 +90,9 @@ fn return_best_move(game_state: &mut GameState) {
     let mut remaining_millis = if game_state.chess.turn().is_white() {game_state.white_time} else {game_state.black_time};
 
     remaining_millis -= 100; //Add some overhead or something
-    //My strange time equation, don't question it :)
-    let min_search_ms = 5000.min(remaining_millis / 20);
+    
+    //Use 10 seconds or one 5th of remaining time, whatever is shorter
+    let min_search_ms = 10000.min(remaining_millis / 8);
     let min_search_time = Duration::from_millis(min_search_ms);
 
     let best_move = find_best_move_with_time(&game_state.chess, min_search_time, &mut game_state.previously_seen_hashes);

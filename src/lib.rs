@@ -48,6 +48,25 @@ impl TranspositionTableData {
     }
 }
 
+struct Timer {
+    start_time: Instant,
+    length: Duration,
+}
+
+impl Timer {
+    fn new(length: Duration) -> Self {
+        Timer {
+            start_time: Instant::now(),
+            length,
+        }
+    }
+
+    #[inline]
+    fn time_up(&self) -> bool {
+        self.start_time.elapsed() >= self.length
+    }
+}
+
 /// Finds the best move for a given depth.
 pub fn find_best_move_with_depth(chess: &Chess, max_depth: u16, previously_seen_hashes: &mut Vec<u64>) -> Move {
     let mut transposition_table: Vec<TranspositionTableData> = vec![TranspositionTableData::new(); TRANSPOSITION_TABLE_LENGTH];
@@ -78,8 +97,6 @@ pub fn find_best_move_with_depth(chess: &Chess, max_depth: u16, previously_seen_
         }
         
         //This is in outer loop to make sure that faster checkmates are selected
-        //Possibly not needed now with iterative deepening?
-        //First move that gives me a checkmate possibly good enough?
         if best_score.abs() >= REALLY_BIG_CHECKMATE_NUMBER {
             break;
         }
@@ -91,11 +108,8 @@ pub fn find_best_move_with_depth(chess: &Chess, max_depth: u16, previously_seen_
 }
 
 /// Finds the best move searching for a given minimum search time.
-/// 
-/// # WARNING
-/// Currently goes well over the given time.
 pub fn find_best_move_with_time(chess: &Chess, min_search_time: Duration, previously_seen_hashes: &mut Vec<u64>) -> Move {
-    let start_time = Instant::now();
+    let timer = Timer::new(min_search_time);
 
     let mut transposition_table: Vec<TranspositionTableData> = vec![TranspositionTableData::new(); TRANSPOSITION_TABLE_LENGTH];
     
@@ -107,19 +121,19 @@ pub fn find_best_move_with_time(chess: &Chess, min_search_time: Duration, previo
 
     let mut depth = 2;
 
-    while Instant::now() - start_time < min_search_time {
+    while !timer.time_up() {
         let mut best_score = NEG_INFINITY;
 
         for (index, m) in moves.clone().iter().enumerate() {
-            if Instant::now() - start_time >= min_search_time {
+            if timer.time_up() {
                 break;
             }
 
             let mut new_chess = chess.clone();
             new_chess.play_unchecked(*m);
 
-            let score = -nega_max(&new_chess, depth, NEG_INFINITY, -best_score,
-                                        &mut transposition_table, previously_seen_hashes);
+            let score = -nega_max_with_time(&new_chess, depth, NEG_INFINITY, -best_score,
+                                        &mut transposition_table, previously_seen_hashes, &timer);
             if score > best_score {
                 best_score = score;
                 for i in (0..index).rev() {
@@ -129,8 +143,6 @@ pub fn find_best_move_with_time(chess: &Chess, min_search_time: Duration, previo
         }
         
         //This is in outer loop to make sure that faster checkmates are selected
-        //Possibly not needed now with iterative deepening?
-        //First move that gives me a checkmate possibly good enough?
         if best_score.abs() >= REALLY_BIG_CHECKMATE_NUMBER {
             break;
         }
@@ -147,7 +159,7 @@ fn nega_max(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
     if let Some(outcome) = chess.outcome() {
         return match outcome {
             Outcome::Draw => 0,
-            _ => -REALLY_BIG_CHECKMATE_NUMBER - depth as i32
+            _ => -REALLY_BIG_CHECKMATE_NUMBER
         };
     }
 
@@ -212,6 +224,115 @@ fn nega_max(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
             new_chess.play_unchecked(*m);
             let score = -nega_max(&new_chess, depth - 1, -beta, -alpha,
                                         transposition_table, previously_seen_hashes);
+            if score > value {
+                value = score;
+                best_move_index = index;
+                alpha = alpha.max(value);
+                if alpha >= beta {
+                    break;
+                }
+            }
+        }
+    }
+
+    previously_seen_hashes.pop();
+
+    if transposition_table[table_index].depth < depth {
+        transposition_table[table_index].hash = hash;
+        transposition_table[table_index].score = value;
+        transposition_table[table_index].depth = depth;
+        transposition_table[table_index].best_move_index = best_move_index as u8;
+        
+        transposition_table[table_index].flag = if value <= original_alpha {
+            TranspositionTableFlag::Upperbound
+        }
+        else if value >= beta {
+            TranspositionTableFlag::Lowerbound
+        }
+        else {
+            TranspositionTableFlag::Exact
+        }
+    }
+    
+    value
+}
+
+fn nega_max_with_time(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32, transposition_table: &mut Vec<TranspositionTableData>,
+                previously_seen_hashes: &mut Vec<u64>, timer: &Timer) -> i32 {
+
+    if let Some(outcome) = chess.outcome() {
+        return match outcome {
+            Outcome::Draw => 0,
+            _ => -REALLY_BIG_CHECKMATE_NUMBER
+        };
+    }
+
+    let hash: Zobrist64 = chess.zobrist_hash(shakmaty::EnPassantMode::Legal);
+    let hash = hash.0;
+    
+    //Engine will evaluate a draw if a single repetition occurs
+    if previously_seen_hashes.contains(&hash) {
+        // A draw is given zero score
+        return 0;
+    }
+
+    if depth == 0 {
+        return quiescence_search(chess, alpha, beta);
+    }
+
+    let original_alpha = alpha;
+
+    let table_index = hash as usize & TABLE_INDEX_MASK;
+    if transposition_table[table_index].hash == hash && transposition_table[table_index].depth >= depth {
+        if transposition_table[table_index].flag == TranspositionTableFlag::Exact {
+            return transposition_table[table_index].score;
+        }
+        else if transposition_table[table_index].flag == TranspositionTableFlag::Lowerbound {
+            alpha = alpha.max(transposition_table[table_index].score);
+        }
+        else if transposition_table[table_index].flag == TranspositionTableFlag::Upperbound {
+            beta = beta.min(transposition_table[table_index].score);
+        }
+        
+        if alpha >= beta {
+            return transposition_table[table_index].score;
+        }
+    }
+
+    previously_seen_hashes.push(hash);
+
+    let mut value = NEG_INFINITY;
+    let mut best_move_index = 0;
+
+    let mut moves = chess.legal_moves();
+    moves.sort_unstable_by_key(move_score);
+
+    if transposition_table[table_index].hash == hash && (transposition_table[table_index].best_move_index as usize) < moves.len() {
+        //Search best move first if there is an entry in the transposition table
+        let mut new_chess = chess.clone();
+        best_move_index = transposition_table[table_index].best_move_index as usize;
+        new_chess.play_unchecked(moves[best_move_index]);
+        let score = -nega_max_with_time(&new_chess, depth - 1, -beta, -alpha,
+                                    transposition_table, previously_seen_hashes, timer);
+        value = value.max(score);
+        alpha = alpha.max(value);
+    }
+    
+    if !(alpha >= beta) {
+        for (index, m) in moves.iter().enumerate() {
+            if timer.time_up() {
+                //give up and say the move is bad if out of time
+                return -REALLY_BIG_CHECKMATE_NUMBER;
+            }
+
+            if transposition_table[table_index].hash == hash && index == transposition_table[table_index].best_move_index as usize {
+                continue;
+            }
+
+            let mut new_chess = chess.clone();
+            new_chess.play_unchecked(*m);
+            let score = -nega_max_with_time(&new_chess, depth - 1, -beta, -alpha,
+                                        transposition_table, previously_seen_hashes, timer);
             if score > value {
                 value = score;
                 best_move_index = index;
@@ -310,7 +431,7 @@ mod tests {
     fn lasker_position() {
         let setup = Fen::from_ascii("8/k7/3p4/p2P1p2/P2P1P2/8/8/K7 w - -".as_bytes()).expect("Fen should be valid").into_setup();
         let chess = Chess::from_setup(setup, CastlingMode::Standard).expect("position should be valid");
-        assert!(find_best_move_with_depth(&chess, 20, &mut Vec::new()).to_string() == "Ka1-b1");
+        assert!(find_best_move_with_time(&chess, Duration::from_millis(10), &mut Vec::new()).to_string() == "Ka1-b1");
     }
 
     #[test]
