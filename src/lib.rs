@@ -86,7 +86,7 @@ pub fn find_best_move_with_depth(chess: &Chess, max_depth: u16, previously_seen_
             let mut new_chess = chess.clone();
             new_chess.play_unchecked(*m);
 
-            let score = -nega_max(&new_chess, depth - 1, NEG_INFINITY, -best_score,
+            let score = -pvs(&new_chess, depth - 1, NEG_INFINITY, -best_score,
                                         &mut transposition_table, previously_seen_hashes);
             if score > best_score {
                 best_score = score;
@@ -119,7 +119,7 @@ pub fn find_best_move_with_time(chess: &Chess, min_search_time: Duration, previo
         return moves[0]
     }
 
-    let mut depth = 1;
+    let mut depth = 2;
 
     'outer: loop {
         let mut best_score = NEG_INFINITY;
@@ -132,7 +132,7 @@ pub fn find_best_move_with_time(chess: &Chess, min_search_time: Duration, previo
             let mut new_chess = chess.clone();
             new_chess.play_unchecked(*m);
 
-            let score = -nega_max_with_time(&new_chess, depth - 1, NEG_INFINITY, -best_score,
+            let score = -pvs_with_time(&new_chess, depth - 1, NEG_INFINITY, -best_score,
                                         &mut transposition_table, previously_seen_hashes, &timer);
             if score > best_score {
                 best_score = score;
@@ -153,14 +153,14 @@ pub fn find_best_move_with_time(chess: &Chess, min_search_time: Duration, previo
     moves[0]
 }
 
-fn nega_max(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
+fn pvs(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
             transposition_table: &mut Vec<TranspositionTableData>, previously_seen_hashes: &mut Vec<u64>) -> i32 {
     
     if let Some(outcome) = chess.outcome() {
         return match outcome {
             // A draw is given zero score
             Outcome::Draw => 0,
-            _ => -REALLY_BIG_CHECKMATE_NUMBER
+            _ => -REALLY_BIG_CHECKMATE_NUMBER - depth as i32
         };
     }
 
@@ -209,7 +209,7 @@ fn nega_max(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
         let mut new_chess = chess.clone();
         best_move_index = transposition_table[table_index].best_move_index as usize;
         new_chess.play_unchecked(moves[best_move_index]);
-        let score = -nega_max(&new_chess, depth - 1, -beta, -alpha,
+        let score = -pvs(&new_chess, depth - 1, -beta, -alpha,
                                     transposition_table, previously_seen_hashes);
         value = value.max(score);
         alpha = alpha.max(value);
@@ -223,8 +223,12 @@ fn nega_max(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
 
             let mut new_chess = chess.clone();
             new_chess.play_unchecked(*m);
-            let score = -nega_max(&new_chess, depth - 1, -beta, -alpha,
-                                        transposition_table, previously_seen_hashes);
+            let mut score = -pvs(&new_chess, depth - 1, -(alpha+1), -alpha,
+                            transposition_table, previously_seen_hashes);
+            if score > alpha && score < beta {
+                score = -pvs(&new_chess, depth - 1, -beta, -alpha,
+                                transposition_table, previously_seen_hashes);
+            }
             if score > value {
                 value = score;
                 best_move_index = index;
@@ -258,14 +262,14 @@ fn nega_max(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
     value
 }
 
-fn nega_max_with_time(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32, transposition_table: &mut Vec<TranspositionTableData>,
+fn pvs_with_time(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32, transposition_table: &mut Vec<TranspositionTableData>,
                 previously_seen_hashes: &mut Vec<u64>, timer: &Timer) -> i32 {
 
     if let Some(outcome) = chess.outcome() {
         return match outcome {
             // A draw is given zero score
             Outcome::Draw => 0,
-            _ => -REALLY_BIG_CHECKMATE_NUMBER
+            _ => -REALLY_BIG_CHECKMATE_NUMBER - depth as i32
         };
     }
 
@@ -314,7 +318,7 @@ fn nega_max_with_time(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32, 
         let mut new_chess = chess.clone();
         best_move_index = transposition_table[table_index].best_move_index as usize;
         new_chess.play_unchecked(moves[best_move_index]);
-        let score = -nega_max_with_time(&new_chess, depth - 1, -beta, -alpha,
+        let score = -pvs_with_time(&new_chess, depth - 1, -beta, -alpha,
                                     transposition_table, previously_seen_hashes, timer);
         value = value.max(score);
         alpha = alpha.max(value);
@@ -333,8 +337,12 @@ fn nega_max_with_time(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32, 
 
             let mut new_chess = chess.clone();
             new_chess.play_unchecked(*m);
-            let score = -nega_max_with_time(&new_chess, depth - 1, -beta, -alpha,
-                                        transposition_table, previously_seen_hashes, timer);
+            let mut score = -pvs(&new_chess, depth - 1, -(alpha+1), -alpha,
+                            transposition_table, previously_seen_hashes);
+            if score > alpha && score < beta {
+                score = -pvs(&new_chess, depth - 1, -beta, -alpha,
+                                transposition_table, previously_seen_hashes);
+            }
             if score > value {
                 value = score;
                 best_move_index = index;
