@@ -77,16 +77,16 @@ pub fn find_best_move_with_depth(chess: &Chess, max_depth: u16, previously_seen_
         return moves[0];
     }
 
-    let mut depth = 2;
+    let mut depth = if max_depth % 2 == 0 {2} else {1};
 
-    while depth < max_depth {
+    while depth <= max_depth {
         let mut best_score = NEG_INFINITY;
 
         for (index, m) in moves.clone().iter().enumerate() {
             let mut new_chess = chess.clone();
             new_chess.play_unchecked(*m);
 
-            let score = -nega_max(&new_chess, depth, NEG_INFINITY, -best_score,
+            let score = -nega_max(&new_chess, depth - 1, NEG_INFINITY, -best_score,
                                         &mut transposition_table, previously_seen_hashes);
             if score > best_score {
                 best_score = score;
@@ -119,20 +119,20 @@ pub fn find_best_move_with_time(chess: &Chess, min_search_time: Duration, previo
         return moves[0]
     }
 
-    let mut depth = 2;
+    let mut depth = 1;
 
-    while !timer.time_up() {
+    'outer: loop {
         let mut best_score = NEG_INFINITY;
 
         for (index, m) in moves.clone().iter().enumerate() {
             if timer.time_up() {
-                break;
+                break 'outer;
             }
 
             let mut new_chess = chess.clone();
             new_chess.play_unchecked(*m);
 
-            let score = -nega_max_with_time(&new_chess, depth, NEG_INFINITY, -best_score,
+            let score = -nega_max_with_time(&new_chess, depth - 1, NEG_INFINITY, -best_score,
                                         &mut transposition_table, previously_seen_hashes, &timer);
             if score > best_score {
                 best_score = score;
@@ -158,13 +158,13 @@ fn nega_max(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
     
     if let Some(outcome) = chess.outcome() {
         return match outcome {
+            // A draw is given zero score
             Outcome::Draw => 0,
             _ => -REALLY_BIG_CHECKMATE_NUMBER
         };
     }
 
-    let hash: Zobrist64 = chess.zobrist_hash(shakmaty::EnPassantMode::Legal);
-    let hash = hash.0;
+    let hash = chess.zobrist_hash::<Zobrist64>(shakmaty::EnPassantMode::Legal).0;
     
     //Engine will evaluate a draw if a single repetition occurs
     if previously_seen_hashes.contains(&hash) {
@@ -203,8 +203,9 @@ fn nega_max(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
     let mut moves = chess.legal_moves();
     moves.sort_unstable_by_key(move_score);
 
+    //Search best move first if there is an entry in the transposition table
+    //This turns out to be MUCH faster than just ordering the move to the front of the move list
     if transposition_table[table_index].hash == hash && (transposition_table[table_index].best_move_index as usize) < moves.len() {
-        //Search best move first if there is an entry in the transposition table
         let mut new_chess = chess.clone();
         best_move_index = transposition_table[table_index].best_move_index as usize;
         new_chess.play_unchecked(moves[best_move_index]);
@@ -214,7 +215,7 @@ fn nega_max(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
         alpha = alpha.max(value);
     }
     
-    if !(alpha >= beta) {
+    if alpha < beta {
         for (index, m) in moves.iter().enumerate() {
             if transposition_table[table_index].hash == hash && index == transposition_table[table_index].best_move_index as usize {
                 continue;
@@ -262,13 +263,13 @@ fn nega_max_with_time(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32, 
 
     if let Some(outcome) = chess.outcome() {
         return match outcome {
+            // A draw is given zero score
             Outcome::Draw => 0,
             _ => -REALLY_BIG_CHECKMATE_NUMBER
         };
     }
 
-    let hash: Zobrist64 = chess.zobrist_hash(shakmaty::EnPassantMode::Legal);
-    let hash = hash.0;
+    let hash = chess.zobrist_hash::<Zobrist64>(shakmaty::EnPassantMode::Legal).0;
     
     //Engine will evaluate a draw if a single repetition occurs
     if previously_seen_hashes.contains(&hash) {
@@ -307,8 +308,9 @@ fn nega_max_with_time(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32, 
     let mut moves = chess.legal_moves();
     moves.sort_unstable_by_key(move_score);
 
+    //Search best move first if there is an entry in the transposition table
+    //This turns out to be MUCH faster than just ordering the move to the front of the move list
     if transposition_table[table_index].hash == hash && (transposition_table[table_index].best_move_index as usize) < moves.len() {
-        //Search best move first if there is an entry in the transposition table
         let mut new_chess = chess.clone();
         best_move_index = transposition_table[table_index].best_move_index as usize;
         new_chess.play_unchecked(moves[best_move_index]);
@@ -318,7 +320,7 @@ fn nega_max_with_time(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32, 
         alpha = alpha.max(value);
     }
     
-    if !(alpha >= beta) {
+    if alpha < beta {
         for (index, m) in moves.iter().enumerate() {
             if timer.time_up() {
                 //give up and say the move is bad if out of time
@@ -373,7 +375,7 @@ fn quiescence_search(chess: &Chess, mut alpha: i32, beta: i32) -> i32 {
         return stand_pat;
     }
 
-    if stand_pat > alpha { //Should be alpha
+    if stand_pat > alpha {
         alpha = stand_pat;
     }
     
@@ -423,7 +425,7 @@ mod tests {
     fn test_position_time() {
         let setup = Fen::from_ascii("2rq1bk1/1b4pp/pn3n2/1p1Ppp2/1PP1P3/7P/3N1PP1/R2QRBK1 w - - 0 23".as_bytes()).expect("Fen should be valid").into_setup();
         let chess = Chess::from_setup(setup, CastlingMode::Standard).expect("position should be valid");
-        find_best_move_with_depth(&chess, 10, &mut Vec::new());
+        find_best_move_with_depth(&chess, 9, &mut Vec::new());
     }
 
     #[test]
@@ -431,7 +433,7 @@ mod tests {
     fn lasker_position() {
         let setup = Fen::from_ascii("8/k7/3p4/p2P1p2/P2P1P2/8/8/K7 w - -".as_bytes()).expect("Fen should be valid").into_setup();
         let chess = Chess::from_setup(setup, CastlingMode::Standard).expect("position should be valid");
-        assert!(find_best_move_with_time(&chess, Duration::from_millis(10), &mut Vec::new()).to_string() == "Ka1-b1");
+        assert_eq!(find_best_move_with_time(&chess, Duration::from_millis(10), &mut Vec::new()).to_string(), "Ka1-b1");
     }
 
     #[test]
@@ -442,6 +444,6 @@ mod tests {
         let chess = Chess::from_setup(setup, CastlingMode::Standard).expect("position should be valid");
         let m1 = find_best_move_with_depth(&chess, 8, &mut Vec::new());
         let m2 = find_best_move_with_time(&chess, Duration::from_millis(500), &mut Vec::new());
-        assert!(m1 == m2);
+        assert_eq!(m1, m2);
     }
 }
