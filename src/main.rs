@@ -1,142 +1,105 @@
-use std::io::prelude::*;
 use std::time::Duration;
-use shakmaty::{Chess, Position, FromSetup, fen::Fen, uci::UciMove};
+use shakmaty::{Chess, Position, FromSetup, fen::Fen, uci::UciMove, Color, CastlingMode, EnPassantMode};
 use shakmaty::zobrist::{Zobrist64, ZobristHash};
 use hodgey_chess_engine::find_best_move_with_time;
+use uci_parser::{UciCommand, UciResponse, UciOption, UciOptionType};
+
+const MOVE_OVERHEAD: Duration = Duration::from_millis(100);
+const MAX_MOVE_TIME: Duration = Duration::from_secs(10);
+//Currently doesn't actually support any options, just pretends it does
+const OPTIONS: [(&str, UciOptionType); 1] = [
+    ("move overhead", UciOptionType::Spin { default: 100, min: 0, max: 1000 })
+];
 
 #[derive(std::default::Default)]
 struct GameState {
     chess: Chess,
     previously_seen_hashes: Vec<u64>,
-    white_time: u64,
-    black_time: u64,
-    exact_move_time: bool //If the time to move is exact (instead of total time remaining)
-                            //I will use this later to make better moves (probably)
+    debug_enabled: bool,
 }
 
 fn main() {
     let mut game_state = GameState::default();
 
-    //Create output file if it doesn't exist
-    if !std::path::Path::new("output.txt").exists() {
-        std::fs::File::create("output.txt").expect("Should be able to create file");
-    }
-
     loop {
-        let mut input_buffer = String::new();
-        std::io::stdin().read_line(&mut input_buffer).unwrap();
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input).expect("Should be able to read input");
         
-        // Writes inputs to a file to help debugging
-        write_to_output_file(&input_buffer);
-
-        let mut input_tokens = input_buffer.split_whitespace();
-        
-        let first_token = match input_tokens.next() {
-            Some(token) => token,
-            None => continue
+        if game_state.debug_enabled {
+            // Writes inputs to stderr for debugging
+            eprintln!("{}", input);
         };
 
-        match first_token {
-            "uci" => {
-                identify_engine();
-                display_options();
-                println!("uciok");
-            },
-            "isready" => println!("readyok"),
-            "quit" => break,
-            "setoption" => todo!("Options cannot be set yet"),
-            "position" => {
-                update_position(input_tokens.map(|str| str.to_string()).collect(), &mut game_state);
-            },
-            "go" => {
-                while let Some(value_type) = input_tokens.next() {
-                    let value: u64 = input_tokens.next().unwrap().parse().unwrap(); //WHAT THE HELL IS THIS?
-                    
-                    game_state.exact_move_time = false;
+        let Ok(message) =  UciCommand::new(&input) else {
+            continue; //Ignore unknown commands
+        };
 
-                    match value_type {
-                        "wtime" => game_state.white_time = value,
-                        "btime" => game_state.black_time = value,
-                        "movetime" => {
-                            game_state.exact_move_time = true;
-
-                            if game_state.chess.turn().is_white() {
-                                game_state.white_time = value;
-                            }
-                            else {
-                                game_state.black_time = value;
-                            }
-                        },
-                        _ => continue //Ignore unknown commands
-                    }
-                }
-
-                return_best_move(&mut game_state)
-            }
-            _ => continue //Ignore unknown commands
+        match message {
+            UciCommand::Uci => print_uci_response(),
+            UciCommand::Debug(should_debug) => game_state.debug_enabled = should_debug,
+            UciCommand::IsReady => println!("{}", UciResponse::readyok()), 
+            UciCommand::Position { fen, moves } => update_position(fen, moves, &mut game_state),
+            UciCommand::Go(search_options) => print_best_move(&search_options, &mut game_state),
+            UciCommand::Quit => break,
+            // TODO make options work in some form
+            //SetOption, Register, UciNewGame, Stop, and PonderHit are all currently ignored
+            _ => {}
         }
     }
 }
 
-fn write_to_output_file(input_buffer: &String) {
-    let mut file = std::fs::OpenOptions::new()
-        .append(true)
-        .open("output.txt")
-        .unwrap();
-    file.write_all(input_buffer.as_bytes()).unwrap();
+fn print_uci_response() {
+    println!("{}", UciResponse::Name("Hodgeybot"));
+    println!("{}", UciResponse::Author("Jixen"));
+    display_options();
+    println!("{}", UciResponse::uciok());
 }
 
-fn return_best_move(game_state: &mut GameState) {
-    let mut remaining_millis = if game_state.chess.turn().is_white() {game_state.white_time} else {game_state.black_time};
-
-    remaining_millis -= 100; //Add some overhead or something
-    
-    //Use 10 seconds or one 5th of remaining time, whatever is shorter
-    let min_search_ms = 10000.min(remaining_millis / 8);
-    let min_search_time = Duration::from_millis(min_search_ms);
-
-    let best_move = find_best_move_with_time(&game_state.chess, min_search_time, &mut game_state.previously_seen_hashes);
-    println!("bestmove {}", best_move.to_uci(shakmaty::CastlingMode::Standard));
-}
-
-fn update_position(position: Vec<String>, game_state: &mut GameState) {
-    let mut fen_and_moves = position.iter();
-    let fen = fen_and_moves.next().expect("fen should be included");
-    
-    let mut chess = if fen == "startpos" {
-        Chess::new()
+fn display_options() {
+    for (name, option_type) in OPTIONS {
+        println!("{}", UciResponse::Option::<String>(UciOption::new(name, option_type)));
     }
-    else {
-        let setup = Fen::from_ascii(fen.as_bytes()).expect("Fen should be valid").into_setup();
-        Chess::from_setup(setup, shakmaty::CastlingMode::Standard).expect("position should be valid")
-    };
+}
 
-    let starting_pos_hash: Zobrist64 = chess.zobrist_hash(shakmaty::EnPassantMode::Legal);
+fn print_best_move(options: &uci_parser::UciSearchOptions, game_state: &mut GameState) {
+    let search_time = match game_state.chess.turn() {
+        Color::White => options.wtime,
+        Color::Black => options.btime,
+    }
+        .map(|d| (d / 8).min(MAX_MOVE_TIME))
+        .unwrap_or(MAX_MOVE_TIME);
+
+    let mut search_time = options.movetime.unwrap_or(search_time);
+    search_time -= MOVE_OVERHEAD; //Add move overhead or something (I have no clue what I am doing)
+
+    let best_move = find_best_move_with_time(&game_state.chess, search_time, &mut game_state.previously_seen_hashes);
+    println!("bestmove {}", best_move.to_uci(CastlingMode::Standard));
+}
+
+fn update_position(fen: Option<String>, moves: Vec<String>, game_state: &mut GameState) {
+    let mut chess = fen
+        .and_then(|fen| fen.parse::<Fen>().ok())
+        .and_then(|fen| Chess::from_setup(fen.into_setup(), CastlingMode::Standard).ok())
+        .unwrap_or_default();
+
+    let starting_pos_hash: Zobrist64 = chess.zobrist_hash(EnPassantMode::Legal);
     let mut hashes_seen = vec![starting_pos_hash.0];
 
-    if fen_and_moves.next().is_some() {
-        for m in fen_and_moves {
-            let selected_move = UciMove::from_ascii(m.as_bytes()).expect("Move should be valid");
-            let legal_move = selected_move.to_move(&chess).expect("Move should be legal");
-            if legal_move.is_zeroing() {
-                hashes_seen.clear();
-            }
-            chess.play_unchecked(legal_move);
-            let hash: Zobrist64 = chess.zobrist_hash(shakmaty::EnPassantMode::Legal);
-            hashes_seen.push(hash.0);
+    for m in moves {
+        let Some(legal_move) = m.parse::<UciMove>().ok()
+            .and_then(|m| m.to_move(&chess).ok())
+        else {
+            continue;
+        };
+
+        if legal_move.is_zeroing() {
+            hashes_seen.clear();
         }
+        chess.play_unchecked(legal_move);
+        let hash: Zobrist64 = chess.zobrist_hash(EnPassantMode::Legal);
+        hashes_seen.push(hash.0);
     }
 
     game_state.chess = chess;
     game_state.previously_seen_hashes = hashes_seen;
-}
-
-fn identify_engine() {
-    println!("id name Hodgeybot");
-    println!("id author Jixen");
-}
-
-//Currently doesn't actually support any options, just pretends it does
-fn display_options() {
-    println!("option name move overhead type spin default 100 min 0 max 1000");
 }
