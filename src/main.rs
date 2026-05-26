@@ -1,6 +1,6 @@
 use std::time::Duration;
 use shakmaty::{Chess, Position, FromSetup, fen::Fen, uci::UciMove, Color, CastlingMode, EnPassantMode};
-use shakmaty::zobrist::{Zobrist64, ZobristHash};
+use shakmaty::zobrist::Zobrist64;
 use hodgey_chess_engine::find_best_move_with_time;
 use uci_parser::{UciCommand, UciResponse, UciOption, UciOptionType};
 

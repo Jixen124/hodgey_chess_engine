@@ -6,7 +6,7 @@
 
 use std::time::{Duration, Instant};
 
-use shakmaty::{zobrist::{Zobrist64, ZobristHash}, Chess, Move, Outcome, Position};
+use shakmaty::{Chess, KnownOutcome, Move, Outcome, Position, zobrist::Zobrist64};
 use evaluation::{evaluate_board, move_score, capture_score};
 
 mod evaluation;
@@ -156,10 +156,10 @@ pub fn find_best_move_with_time(chess: &Chess, min_search_time: Duration, previo
 fn pvs(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
             transposition_table: &mut Vec<TranspositionTableData>, previously_seen_hashes: &mut Vec<u64>) -> i32 {
     
-    if let Some(outcome) = chess.outcome() {
+    if let Outcome::Known(outcome) = chess.outcome() {
         return match outcome {
             // A draw is given zero score
-            Outcome::Draw => 0,
+            KnownOutcome::Draw => 0,
             _ => -REALLY_BIG_CHECKMATE_NUMBER - depth as i32
         };
     }
@@ -265,10 +265,10 @@ fn pvs(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
 fn pvs_with_time(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32, transposition_table: &mut Vec<TranspositionTableData>,
                 previously_seen_hashes: &mut Vec<u64>, timer: &Timer) -> i32 {
 
-    if let Some(outcome) = chess.outcome() {
+    if let Outcome::Known(outcome) = chess.outcome() {
         return match outcome {
             // A draw is given zero score
-            Outcome::Draw => 0,
+            KnownOutcome::Draw => 0,
             _ => -REALLY_BIG_CHECKMATE_NUMBER - depth as i32
         };
     }
