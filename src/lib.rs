@@ -85,8 +85,9 @@ pub fn find_best_move_with_depth(chess: &Chess, max_depth: u16, previously_seen_
         for (index, m) in moves.clone().iter().enumerate() {
             let mut new_chess = chess.clone();
             new_chess.play_unchecked(*m);
+            let hash = new_chess.zobrist_hash::<Zobrist64>(shakmaty::EnPassantMode::Legal).0;
 
-            let score = -pvs(&new_chess, depth - 1, NEG_INFINITY, -best_score,
+            let score = -pvs(&new_chess, hash, depth - 1, NEG_INFINITY, -best_score,
                                         &mut transposition_table, previously_seen_hashes);
             if score > best_score {
                 best_score = score;
@@ -131,8 +132,9 @@ pub fn find_best_move_with_time(chess: &Chess, min_search_time: Duration, previo
 
             let mut new_chess = chess.clone();
             new_chess.play_unchecked(*m);
+            let hash = new_chess.zobrist_hash::<Zobrist64>(shakmaty::EnPassantMode::Legal).0;
 
-            let score = -pvs_with_time(&new_chess, depth - 1, NEG_INFINITY, -best_score,
+            let score = -pvs_with_time(&new_chess, hash, depth - 1, NEG_INFINITY, -best_score,
                                         &mut transposition_table, previously_seen_hashes, &timer);
             if score > best_score {
                 best_score = score;
@@ -153,7 +155,7 @@ pub fn find_best_move_with_time(chess: &Chess, min_search_time: Duration, previo
     moves[0]
 }
 
-fn pvs(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
+fn pvs(chess: &Chess, hash: u64, depth: u16, mut alpha: i32, mut beta: i32,
             transposition_table: &mut Vec<TranspositionTableData>, previously_seen_hashes: &mut Vec<u64>) -> i32 {
     
     if let Outcome::Known(outcome) = chess.outcome() {
@@ -163,8 +165,6 @@ fn pvs(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
             _ => -REALLY_BIG_CHECKMATE_NUMBER - depth as i32
         };
     }
-
-    let hash = chess.zobrist_hash::<Zobrist64>(shakmaty::EnPassantMode::Legal).0;
     
     //Engine will evaluate a draw if a single repetition occurs
     if previously_seen_hashes.contains(&hash) {
@@ -209,7 +209,10 @@ fn pvs(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
         let mut new_chess = chess.clone();
         best_move_index = transposition_table[table_index].best_move_index as usize;
         new_chess.play_unchecked(moves[best_move_index]);
-        let score = -pvs(&new_chess, depth - 1, -beta, -alpha,
+        let hash = chess.update_zobrist_hash(Zobrist64(hash), moves[best_move_index], shakmaty::EnPassantMode::Legal)
+            .unwrap_or_else(|| new_chess.zobrist_hash::<Zobrist64>(shakmaty::EnPassantMode::Legal)).0;
+        
+        let score = -pvs(&new_chess, hash, depth - 1, -beta, -alpha,
                                     transposition_table, previously_seen_hashes);
         value = value.max(score);
         alpha = alpha.max(value);
@@ -223,10 +226,13 @@ fn pvs(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
 
             let mut new_chess = chess.clone();
             new_chess.play_unchecked(*m);
-            let mut score = -pvs(&new_chess, depth - 1, -(alpha+1), -alpha,
+            let hash = chess.update_zobrist_hash(Zobrist64(hash), *m, shakmaty::EnPassantMode::Legal)
+                .unwrap_or_else(|| new_chess.zobrist_hash::<Zobrist64>(shakmaty::EnPassantMode::Legal)).0;
+
+            let mut score = -pvs(&new_chess, hash, depth - 1, -(alpha+1), -alpha,
                             transposition_table, previously_seen_hashes);
             if score > alpha && score < beta {
-                score = -pvs(&new_chess, depth - 1, -beta, -alpha,
+                score = -pvs(&new_chess, hash, depth - 1, -beta, -alpha,
                                 transposition_table, previously_seen_hashes);
             }
             if score > value {
@@ -262,7 +268,7 @@ fn pvs(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32,
     value
 }
 
-fn pvs_with_time(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32, transposition_table: &mut Vec<TranspositionTableData>,
+fn pvs_with_time(chess: &Chess, hash: u64, depth: u16, mut alpha: i32, mut beta: i32, transposition_table: &mut Vec<TranspositionTableData>,
                 previously_seen_hashes: &mut Vec<u64>, timer: &Timer) -> i32 {
 
     if let Outcome::Known(outcome) = chess.outcome() {
@@ -272,8 +278,6 @@ fn pvs_with_time(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32, trans
             _ => -REALLY_BIG_CHECKMATE_NUMBER - depth as i32
         };
     }
-
-    let hash = chess.zobrist_hash::<Zobrist64>(shakmaty::EnPassantMode::Legal).0;
     
     //Engine will evaluate a draw if a single repetition occurs
     if previously_seen_hashes.contains(&hash) {
@@ -318,7 +322,10 @@ fn pvs_with_time(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32, trans
         let mut new_chess = chess.clone();
         best_move_index = transposition_table[table_index].best_move_index as usize;
         new_chess.play_unchecked(moves[best_move_index]);
-        let score = -pvs_with_time(&new_chess, depth - 1, -beta, -alpha,
+        let hash = chess.update_zobrist_hash(Zobrist64(hash), moves[best_move_index], shakmaty::EnPassantMode::Legal)
+            .unwrap_or_else(|| new_chess.zobrist_hash::<Zobrist64>(shakmaty::EnPassantMode::Legal)).0;
+
+        let score = -pvs_with_time(&new_chess, hash, depth - 1, -beta, -alpha,
                                     transposition_table, previously_seen_hashes, timer);
         value = value.max(score);
         alpha = alpha.max(value);
@@ -337,10 +344,13 @@ fn pvs_with_time(chess: &Chess, depth: u16, mut alpha: i32, mut beta: i32, trans
 
             let mut new_chess = chess.clone();
             new_chess.play_unchecked(*m);
-            let mut score = -pvs(&new_chess, depth - 1, -(alpha+1), -alpha,
+            let hash = chess.update_zobrist_hash(Zobrist64(hash), *m, shakmaty::EnPassantMode::Legal)
+                .unwrap_or_else(|| new_chess.zobrist_hash::<Zobrist64>(shakmaty::EnPassantMode::Legal)).0;
+
+            let mut score = -pvs(&new_chess, hash, depth - 1, -(alpha+1), -alpha,
                             transposition_table, previously_seen_hashes);
             if score > alpha && score < beta {
-                score = -pvs(&new_chess, depth - 1, -beta, -alpha,
+                score = -pvs(&new_chess, hash, depth - 1, -beta, -alpha,
                                 transposition_table, previously_seen_hashes);
             }
             if score > value {
